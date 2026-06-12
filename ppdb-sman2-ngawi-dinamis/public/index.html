@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang='id'>
+<head>
+  <meta charset='UTF-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+  <meta name='description' content='Website PPDB dinamis SMAN 2 Ngawi'>
+  <title>PPDB SMAN 2 NGAWI</title>
+  <link rel='stylesheet' href='styles.css'>
+</head>
+<body>
+  <header class='site-header'>
+    <nav class='navbar container'>
+      <a class='brand' href='#beranda'><span class='brand-logo'>2N</span><span><strong>PPDB SMADA NGAWI</strong><small>Sistem Penerimaan Murid Baru</small></span></a>
+      <button class='nav-toggle' id='navToggle' aria-label='Buka menu'><span></span><span></span><span></span></button>
+      <div class='nav-links' id='navLinks'>
+        <a href='#beranda'>Beranda</a>
+        <a href='#alur'>Alur</a>
+        <a href='#jadwal'>Jadwal</a>
+        <a href='#daftar' class='nav-cta'>Daftar</a>
+        <a href='#cek-status'>Status</a>
+        <a href='#peringkat'>Peringkat</a>
+        <a href='#admin'>Admin</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class='hero' id='beranda'>
+      <div class='container hero-grid'>
+        <div>
+          <p class='eyebrow'>PPDB Online 2026/2027</p>
+          <h1>Daftar ke <span>SMAN 2 NGAWI</span> lebih mudah, cepat, dan transparan.</h1>
+          <p class='lead'>Website dinamis untuk pendaftaran murid baru, cek status verifikasi, pemantauan nilai tes, dan peringkat seleksi secara real-time.</p>
+          <div class='actions'><a class='btn btn-primary' href='#daftar'>Daftar Sekarang</a><a class='btn btn-soft' href='#peringkat'>Lihat Peringkat</a></div>
+        </div>
+        <aside class='hero-card'>
+          <span class='badge'>PPDB Dibuka</span>
+          <h2>Kuota Jalur</h2>
+          <div class='quota'><div><b>60%</b><span>Prestasi</span></div><div><b>25%</b><span>Zonasi</span></div><div><b>10%</b><span>Afirmasi</span></div><div><b>5%</b><span>Perpindahan Orang Tua</span></div></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class='stats container'>
+      <article><strong id='statApplicants'>0</strong><span>Pendaftar</span></article>
+      <article><strong id='statVerified'>0</strong><span>Terverifikasi</span></article>
+      <article><strong>288</strong><span>Estimasi Kuota</span></article>
+      <article><strong>A</strong><span>Akreditasi</span></article>
+    </section>
+
+    <section class='section container' id='alur'>
+      <p class='eyebrow'>Alur Pendaftaran</p>
+      <h2>Lima langkah mudah menuju SMAN 2 Ngawi.</h2>
+      <div class='cards five'><article>Isi formulir</article><article>Verifikasi berkas</article><article>Tes seleksi</article><article>Lihat ranking</article><article>Daftar ulang</article></div>
+    </section>
+
+    <section class='section muted' id='jadwal'>
+      <div class='container'>
+        <p class='eyebrow'>Jadwal PPDB</p>
+        <h2>Tanggal penting.</h2>
+        <div class='timeline'><article>1 - 20 Jun 2026: Pendaftaran Online</article><article>21 - 25 Jun 2026: Verifikasi Berkas</article><article>27 Jun 2026: Tes Seleksi</article><article>30 Jun 2026: Pengumuman</article><article>1 - 5 Jul 2026: Daftar Ulang</article></div>
+      </div>
+    </section>
+
+    <section class='section container' id='daftar'>
+      <p class='eyebrow'>Daftar Sekarang</p>
+      <h2>Formulir Pendaftaran Calon Murid Baru.</h2>
+      <form class='panel form-grid' id='registrationForm'>
+        <label>Nama Lengkap<input name='name' required></label>
+        <label>NISN<input name='nisn' minlength='8' maxlength='12' required></label>
+        <label>Asal Sekolah<input name='school' required></label>
+        <label>Tanggal Lahir<input type='date' name='birthDate' required></label>
+        <label>Jenis Kelamin<select name='gender' required><option value=''>Pilih</option><option>Laki-laki</option><option>Perempuan</option></select></label>
+        <label>Jalur<select name='pathway' required><option value=''>Pilih jalur</option><option>Prestasi</option><option>Zonasi</option><option>Afirmasi</option><option>Perpindahan Orang Tua</option></select></label>
+        <label>Rata-rata Rapor<input type='number' min='0' max='100' step='0.01' name='reportScore' required></label>
+        <label>No. HP<input type='tel' name='phone' required></label>
+        <label class='full'>Email<input type='email' name='email' required></label>
+        <label class='full'>Alamat<textarea name='address' rows='3' required></textarea></label>
+        <label class='full'>Prestasi atau Minat<textarea name='achievement' rows='3'></textarea></label>
+        <div class='full actions'><button class='btn btn-primary' type='submit'>Kirim Pendaftaran</button><button class='btn btn-ghost' type='reset'>Reset</button></div>
+        <p class='form-message full' id='formMessage'></p>
+      </form>
+    </section>
+
+    <section class='section muted' id='cek-status'>
+      <div class='container'>
+        <p class='eyebrow'>Cek Status</p>
+        <h2>Pantau proses seleksimu.</h2>
+        <div class='panel search-row'><input id='statusKeyword' placeholder='Nomor pendaftaran atau NISN'><button class='btn btn-primary' id='checkStatusBtn'>Cek Status</button></div>
+        <div class='result' id='statusResult'>Masukkan nomor pendaftaran atau NISN untuk melihat status.</div>
+      </div>
+    </section>
+
+    <section class='section container' id='peringkat'>
+      <div class='table-header'><div><p class='eyebrow'>Peringkat Seleksi</p><h2>Ranking hasil tes dan nilai akhir.</h2></div><div class='tools'><input id='rankingSearch' placeholder='Cari nama/NISN/jalur'><select id='pathwayFilter'><option value=''>Semua Jalur</option><option>Prestasi</option><option>Zonasi</option><option>Afirmasi</option><option>Perpindahan Orang Tua</option></select></div></div>
+      <div class='table-card'><table><thead><tr><th>Rank</th><th>No. Daftar</th><th>Nama</th><th>Jalur</th><th>Rapor</th><th>Tes</th><th>Akhir</th><th>Status</th></tr></thead><tbody id='rankingBody'></tbody></table></div>
+    </section>
+
+    <section class='section muted' id='admin'>
+      <div class='container panel'>
+        <p class='eyebrow'>Panel Admin</p>
+        <h2>Kelola data pendaftar.</h2>
+        <p>Password demo: <strong>adminppdb</strong></p>
+        <div class='search-row' id='adminLogin'><input type='password' id='adminPassword' placeholder='Password admin'><button class='btn btn-primary' id='adminLoginBtn'>Masuk Admin</button></div>
+        <div class='hidden' id='adminArea'>
+          <div class='actions'><button class='btn btn-soft' id='exportCsvBtn'>Ekspor CSV</button><button class='btn btn-ghost' id='resetDataBtn'>Reset Data Demo</button><button class='btn btn-ghost' id='logoutAdminBtn'>Keluar</button></div>
+          <div class='table-card'><table><thead><tr><th>No. Daftar</th><th>Nama</th><th>Nilai Tes</th><th>Status</th><th>Catatan</th><th>Aksi</th></tr></thead><tbody id='adminBody'></tbody></table></div>
+        </div>
+        <p class='form-message' id='adminMessage'></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class='footer'><div class='container'>PPDB SMAN 2 NGAWI 2026</div></footer>
+  <div class='toast' id='toast'></div>
+  <script src='app.js'></script>
+</body>
+</html>
