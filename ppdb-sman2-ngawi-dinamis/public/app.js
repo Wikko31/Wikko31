@@ -49,12 +49,14 @@ function statusClass(status) {
 }
 
 function showToast(message) {
+  if (!selectors.toast) return;
   selectors.toast.textContent = message;
   selectors.toast.classList.add('show');
   setTimeout(() => selectors.toast.classList.remove('show'), 2600);
 }
 
 function setMessage(element, message, type = 'success') {
+  if (!element) return;
   element.textContent = message || '';
   element.classList.remove('success', 'error');
   if (message) element.classList.add(type);
@@ -69,6 +71,7 @@ async function api(path, options = {}) {
       ...(options.headers || {})
     }
   };
+  delete request.admin;
   const response = await fetch(path, request);
   const contentType = response.headers.get('content-type') || '';
   const payload = contentType.includes('application/json') ? await response.json() : await response.text();
@@ -90,18 +93,21 @@ async function loadRanking() {
 }
 
 function updateStats(rows) {
-  selectors.statApplicants.textContent = rows.length;
-  selectors.statVerified.textContent = rows.filter(item => ['Terverifikasi', 'Diterima', 'Cadangan'].includes(item.status)).length;
+  if (selectors.statApplicants) selectors.statApplicants.textContent = rows.length;
+  if (selectors.statVerified) {
+    selectors.statVerified.textContent = rows.filter((item) => ['Terverifikasi', 'Diterima', 'Cadangan'].includes(item.status)).length;
+  }
 }
 
 function renderRanking(rows) {
+  if (!selectors.rankingBody) return;
   if (!rows.length) {
-    selectors.rankingBody.innerHTML = '<tr><td colspan=\'8\' class=\'muted-text\'>Belum ada data ranking.</td></tr>';
+    selectors.rankingBody.innerHTML = `<tr><td colspan='8' class='muted-text'>Belum ada data ranking.</td></tr>`;
     return;
   }
-  selectors.rankingBody.innerHTML = rows.map(item => `
+  selectors.rankingBody.innerHTML = rows.map((item) => `
     <tr>
-      <td>${item.rank ? `<span class='rank-pill'>${item.rank}</span>` : '<span class=\'muted-text\'>-</span>'}</td>
+      <td>${item.rank ? `<span class='rank-pill'>${item.rank}</span>` : `<span class='muted-text'>-</span>`}</td>
       <td>${escapeHtml(item.registrationNumber)}</td>
       <td>${escapeHtml(item.name)}<br><span class='muted-text'>${escapeHtml(item.nisn)}</span></td>
       <td>${escapeHtml(item.pathway)}</td>
@@ -122,7 +128,7 @@ async function handleRegister(event) {
     const number = result.applicant.registrationNumber;
     setMessage(selectors.formMessage, `Pendaftaran berhasil. Nomor pendaftaran Anda: ${number}`, 'success');
     selectors.registrationForm.reset();
-    selectors.statusKeyword.value = number;
+    if (selectors.statusKeyword) selectors.statusKeyword.value = number;
     await loadRanking();
     showToast('Pendaftaran berhasil disimpan');
   } catch (error) {
@@ -185,16 +191,17 @@ async function loadAdmin() {
 }
 
 function renderAdmin(rows) {
+  if (!selectors.adminBody) return;
   if (!rows.length) {
-    selectors.adminBody.innerHTML = '<tr><td colspan=\'6\' class=\'muted-text\'>Belum ada pendaftar.</td></tr>';
+    selectors.adminBody.innerHTML = `<tr><td colspan='6' class='muted-text'>Belum ada pendaftar.</td></tr>`;
     return;
   }
-  selectors.adminBody.innerHTML = rows.map(item => `
+  selectors.adminBody.innerHTML = rows.map((item) => `
     <tr data-id='${escapeHtml(item.registrationNumber)}'>
       <td>${escapeHtml(item.registrationNumber)}<br><span class='muted-text'>${escapeHtml(item.nisn)}</span></td>
       <td>${escapeHtml(item.name)}<br><span class='muted-text'>${escapeHtml(item.pathway)}</span></td>
       <td><input type='number' min='0' max='100' step='0.01' data-field='testScore' value='${item.testScore ?? ''}'></td>
-      <td><select data-field='status'>${['Menunggu Verifikasi', 'Terverifikasi', 'Cadangan', 'Diterima', 'Ditolak'].map(status => `<option value='${status}' ${status === item.status ? 'selected' : ''}>${status}</option>`).join('')}</select></td>
+      <td><select data-field='status'>${['Menunggu Verifikasi', 'Terverifikasi', 'Cadangan', 'Diterima', 'Ditolak'].map((status) => `<option value='${status}' ${status === item.status ? 'selected' : ''}>${status}</option>`).join('')}</select></td>
       <td><textarea rows='2' data-field='notes'>${escapeHtml(item.notes || '')}</textarea></td>
       <td><button class='btn btn-primary save-admin-btn'>Simpan</button></td>
     </tr>
@@ -213,7 +220,7 @@ async function saveAdminRow(button) {
     await api(`/api/admin/applicants/${encodeURIComponent(registrationNumber)}`, { method: 'PATCH', body: JSON.stringify(payload), admin: true });
     setMessage(selectors.adminMessage, `Data ${registrationNumber} berhasil diperbarui.`, 'success');
     await Promise.all([loadRanking(), loadAdmin()]);
-    showToast('Data admin tersimpan');
+    showToast('Data berhasil disimpan');
   } catch (error) {
     setMessage(selectors.adminMessage, error.message, 'error');
   }
@@ -242,12 +249,12 @@ async function exportCsv() {
 }
 
 async function resetData() {
-  if (!confirm('Reset data ke data contoh awal?')) return;
+  if (!confirm('Reset data pendaftaran? Data tambahan akan hilang.')) return;
   try {
     await api('/api/admin/reset', { method: 'POST', admin: true });
     await Promise.all([loadRanking(), loadAdmin()]);
-    setMessage(selectors.adminMessage, 'Data demo berhasil direset.', 'success');
-    showToast('Data demo direset');
+    setMessage(selectors.adminMessage, 'Data berhasil direset.', 'success');
+    showToast('Data berhasil direset');
   } catch (error) {
     setMessage(selectors.adminMessage, error.message, 'error');
   }
@@ -271,32 +278,32 @@ function debounce(callback, delay = 350) {
 }
 
 function setupEvents() {
-  selectors.navToggle.addEventListener('click', () => selectors.navLinks.classList.toggle('show'));
-  selectors.navLinks.querySelectorAll('a').forEach(link => link.addEventListener('click', () => selectors.navLinks.classList.remove('show')));
-  selectors.registrationForm.addEventListener('submit', handleRegister);
-  selectors.checkStatusBtn.addEventListener('click', checkStatus);
-  selectors.statusKeyword.addEventListener('keydown', event => { if (event.key === 'Enter') checkStatus(); });
-  selectors.rankingSearch.addEventListener('input', debounce(event => { state.rankingSearch = event.target.value.trim(); loadRanking().catch(error => showToast(error.message)); }));
-  selectors.pathwayFilter.addEventListener('change', event => { state.pathwayFilter = event.target.value; loadRanking().catch(error => showToast(error.message)); });
-  selectors.adminLoginBtn.addEventListener('click', loginAdmin);
-  selectors.adminPassword.addEventListener('keydown', event => { if (event.key === 'Enter') loginAdmin(); });
-  selectors.adminBody.addEventListener('click', event => { if (event.target.classList.contains('save-admin-btn')) saveAdminRow(event.target); });
-  selectors.exportCsvBtn.addEventListener('click', exportCsv);
-  selectors.resetDataBtn.addEventListener('click', resetData);
-  selectors.logoutAdminBtn.addEventListener('click', logoutAdmin);
+  selectors.navToggle?.addEventListener('click', () => selectors.navLinks.classList.toggle('show'));
+  selectors.navLinks?.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => selectors.navLinks.classList.remove('show')));
+  selectors.registrationForm?.addEventListener('submit', handleRegister);
+  selectors.checkStatusBtn?.addEventListener('click', checkStatus);
+  selectors.statusKeyword?.addEventListener('keydown', (event) => { if (event.key === 'Enter') checkStatus(); });
+  selectors.rankingSearch?.addEventListener('input', debounce((event) => { state.rankingSearch = event.target.value.trim(); loadRanking().catch((error) => showToast(error.message)); }));
+  selectors.pathwayFilter?.addEventListener('change', (event) => { state.pathwayFilter = event.target.value; loadRanking().catch((error) => showToast(error.message)); });
+  selectors.adminLoginBtn?.addEventListener('click', loginAdmin);
+  selectors.adminPassword?.addEventListener('keydown', (event) => { if (event.key === 'Enter') loginAdmin(); });
+  selectors.adminBody?.addEventListener('click', (event) => { if (event.target.classList.contains('save-admin-btn')) saveAdminRow(event.target); });
+  selectors.exportCsvBtn?.addEventListener('click', exportCsv);
+  selectors.resetDataBtn?.addEventListener('click', resetData);
+  selectors.logoutAdminBtn?.addEventListener('click', logoutAdmin);
 }
 
 async function init() {
   setupEvents();
   await loadRanking();
-  if (state.adminPassword) {
+  if (state.adminPassword && selectors.adminLogin && selectors.adminArea) {
     selectors.adminLogin.classList.add('hidden');
     selectors.adminArea.classList.remove('hidden');
     loadAdmin().catch(() => logoutAdmin());
   }
 }
 
-init().catch(error => {
+init().catch((error) => {
   console.error(error);
   showToast('Gagal memuat aplikasi');
 });
