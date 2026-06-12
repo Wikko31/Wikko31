@@ -13,12 +13,28 @@ const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
 const DB_DIR = path.join(ROOT_DIR, 'db');
 const DB_PATH = path.join(DB_DIR, 'data.json');
+const UPLOAD_DIR = path.join(ROOT_DIR, 'uploads');
+const MAX_JSON_BYTES = 1_000_000;
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const MAX_MULTIPART_BYTES = 40 * 1024 * 1024;
+
+const documentDefinitions = [
+  { key: 'familyCard', label: 'Kartu Keluarga', required: true, allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'] },
+  { key: 'birthCertificate', label: 'Akta Kelahiran', required: true, allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'] },
+  { key: 'reportDocument', label: 'Rapor Semester 1-5 / Keterangan Nilai', required: true, allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'] },
+  { key: 'nisnProof', label: 'Bukti NISN dan Data Dapodik', required: true, allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'] },
+  { key: 'photo', label: 'Pas Foto 3x4', required: true, allowedExtensions: ['.jpg', '.jpeg', '.png'] },
+  { key: 'achievementCertificate', label: 'Sertifikat Prestasi', requiredForPathway: 'Prestasi', allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'] }
+];
+
+const documentDefinitionMap = Object.fromEntries(documentDefinitions.map(item => [item.key, item]));
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.pdf': 'application/pdf',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -210,7 +226,7 @@ function parseBody(req) {
     let body = '';
     req.on('data', chunk => {
       body += chunk;
-      if (body.length > 1_000_000) {
+      if (body.length > MAX_JSON_BYTES) {
         reject(new Error('Ukuran request terlalu besar.'));
         req.destroy();
       }
@@ -223,6 +239,102 @@ function parseBody(req) {
         reject(new Error('Format JSON tidak valid.'));
       }
     });
+    req.on('error', reject);
+  });
+}
+
+function parseContentDisposition(value) {
+  const result = {};
+  String(value || '').split(';').forEach(part => {
+    const [rawKey, ...rawValue] = part.trim().split('=');
+    if (!rawKey || !rawValue.length) return;
+    const key = rawKey.toLowerCase();
+    const joinedValue = rawValue.join('=').trim();
+    result[key] = joinedValue.replace(/^"|"$/g, '');
+  });
+  return result;
+}
+
+function parseMultipart(req) {
+  const contentType = req.headers['content-type'] || '';
+  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+  if (!boundaryMatch) {
+    return Promise.reject(new Error('Format unggahan dokumen tidak valid.'));
+  }
+
+  const boundary = Buffer.from(`--${boundaryMatch[1] || boundaryMatch[2]}`);
+  const separator = Buffer.from('\r\n\r\n');
+
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > MAX_MULTIPART_BYTES) {
+        reject(new Error('Total ukuran unggahan terlalu besar. Maksimal 40 MB per pendaftaran.'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    req.on('end', () => {
+      try {
+        const body = Buffer.concat(chunks);
+        const fields = {};
+        const files = {};
+        let cursor = body.indexOf(boundary);
+
+        while (cursor !== -1) {
+          cursor += boundary.length;
+
+          if (body[cursor] === 45 && body[cursor + 1] === 45) break;
+          if (body[cursor] === 13 && body[cursor + 1] === 10) cursor += 2;
+
+          const headerEnd = body.indexOf(separator, cursor);
+          if (headerEnd === -1) break;
+
+          const headerText = body.slice(cursor, headerEnd).toString('utf8');
+          const headers = {};
+          headerText.split('\r\n').forEach(line => {
+            const index = line.indexOf(':');
+            if (index === -1) return;
+            headers[line.slice(0, index).trim().toLowerCase()] = line.slice(index + 1).trim();
+          });
+
+          const disposition = parseContentDisposition(headers['content-disposition']);
+          const fieldName = disposition.name;
+          const nextBoundary = body.indexOf(boundary, headerEnd + separator.length);
+          if (!fieldName || nextBoundary === -1) break;
+
+          let dataEnd = nextBoundary;
+          if (body[dataEnd - 2] === 13 && body[dataEnd - 1] === 10) dataEnd -= 2;
+
+          const content = body.slice(headerEnd + separator.length, dataEnd);
+          if (disposition.filename) {
+            if (content.length > 0) {
+              files[fieldName] = {
+                fieldName,
+                originalName: path.basename(disposition.filename),
+                mimeType: headers['content-type'] || 'application/octet-stream',
+                size: content.length,
+                buffer: content
+              };
+            }
+          } else {
+            fields[fieldName] = content.toString('utf8').trim();
+          }
+
+          cursor = nextBoundary;
+        }
+
+        resolve({ fields, files });
+      } catch (error) {
+        reject(error);
+      }
+    });
+
     req.on('error', reject);
   });
 }
@@ -269,6 +381,13 @@ function publicApplicant(applicant) {
     notes: applicant.notes,
     createdAt: applicant.createdAt,
     updatedAt: applicant.updatedAt
+  };
+}
+
+function adminApplicant(applicant) {
+  return {
+    ...publicApplicant(applicant),
+    documents: documentList(applicant.documents)
   };
 }
 
@@ -346,6 +465,99 @@ function validateApplicant(payload, existingApplicants) {
   return errors;
 }
 
+function documentIsRequired(definition, pathway) {
+  return Boolean(definition.required || definition.requiredForPathway === pathway);
+}
+
+function validateDocumentUploads(payload, files) {
+  const errors = [];
+  const pathway = normalizeText(payload.pathway);
+
+  for (const definition of documentDefinitions) {
+    const file = files[definition.key];
+    if (documentIsRequired(definition, pathway) && !file) {
+      errors.push(`${definition.label} wajib diunggah.`);
+      continue;
+    }
+    if (!file) continue;
+
+    const extension = path.extname(file.originalName).toLowerCase();
+    const allowedExtensions = definition.allowedExtensions || [];
+    if (!allowedExtensions.includes(extension)) {
+      errors.push(`${definition.label} harus berformat ${allowedExtensions.map(item => item.replace('.', '').toUpperCase()).join(', ')}.`);
+    }
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      errors.push(`${definition.label} maksimal 5 MB.`);
+    }
+  }
+
+  return errors;
+}
+
+function sanitizeFileName(value) {
+  const base = path.basename(value || 'dokumen').replace(/\.[^.]*$/, '');
+  return base
+    .normalize('NFKD')
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 80) || 'dokumen';
+}
+
+function applicantUploadDir(registrationNumber) {
+  return path.join(UPLOAD_DIR, registrationNumber);
+}
+
+async function saveApplicantDocuments(registrationNumber, files) {
+  const documents = {};
+  const targetDir = applicantUploadDir(registrationNumber);
+  await fsp.mkdir(targetDir, { recursive: true });
+  const uploadedAt = new Date().toISOString();
+
+  for (const definition of documentDefinitions) {
+    const file = files[definition.key];
+    if (!file) continue;
+
+    const extension = path.extname(file.originalName).toLowerCase();
+    const fileName = `${definition.key}-${sanitizeFileName(file.originalName)}${extension}`;
+    const filePath = path.join(targetDir, fileName);
+    await fsp.writeFile(filePath, file.buffer);
+
+    documents[definition.key] = {
+      label: definition.label,
+      originalName: file.originalName,
+      fileName,
+      mimeType: file.mimeType,
+      size: file.size,
+      uploadedAt
+    };
+  }
+
+  return documents;
+}
+
+async function clearUploadedDocuments() {
+  await fsp.rm(UPLOAD_DIR, { recursive: true, force: true });
+  await fsp.mkdir(UPLOAD_DIR, { recursive: true });
+}
+
+function documentList(documents = {}) {
+  return documentDefinitions.map(definition => {
+    const item = documents[definition.key];
+    return {
+      key: definition.key,
+      label: definition.label,
+      required: Boolean(definition.required),
+      requiredForPathway: definition.requiredForPathway || null,
+      uploaded: Boolean(item),
+      originalName: item ? item.originalName : null,
+      size: item ? item.size : null,
+      uploadedAt: item ? item.uploadedAt : null
+    };
+  });
+}
+
 function makeRegistrationNumber(sequence) {
   return `PPDB-${REGISTRATION_YEAR}-${String(sequence).padStart(4, '0')}`;
 }
@@ -417,9 +629,17 @@ async function handleApi(req, res, url) {
   }
 
   if (method === 'POST' && pathname === '/api/register') {
-    const payload = await parseBody(req);
+    const contentType = req.headers['content-type'] || '';
+    const parsedRequest = contentType.includes('multipart/form-data')
+      ? await parseMultipart(req)
+      : { fields: await parseBody(req), files: {} };
+    const payload = parsedRequest.fields;
+    const files = parsedRequest.files;
     const db = await readDb();
-    const errors = validateApplicant(payload, db.applicants);
+    const errors = [
+      ...validateApplicant(payload, db.applicants),
+      ...validateDocumentUploads(payload, files)
+    ];
 
     if (errors.length) {
       return sendJson(res, 400, {
@@ -431,8 +651,10 @@ async function handleApi(req, res, url) {
 
     const nextSequence = Number(db.meta.lastSequence || 0) + 1;
     const now = new Date().toISOString();
+    const registrationNumber = makeRegistrationNumber(nextSequence);
+    const documents = await saveApplicantDocuments(registrationNumber, files);
     const applicant = {
-      registrationNumber: makeRegistrationNumber(nextSequence),
+      registrationNumber,
       nisn: normalizeText(payload.nisn),
       name: normalizeText(payload.name),
       school: normalizeText(payload.school),
@@ -445,6 +667,7 @@ async function handleApi(req, res, url) {
       email: normalizeText(payload.email),
       address: normalizeText(payload.address),
       achievement: normalizeText(payload.achievement),
+      documents,
       status: 'Menunggu Verifikasi',
       notes: 'Pendaftaran berhasil. Menunggu verifikasi panitia.',
       createdAt: now,
@@ -515,8 +738,65 @@ async function handleApi(req, res, url) {
     const db = await readDb();
     return sendJson(res, 200, {
       success: true,
-      data: getRanking(db.applicants)
+      data: getRanking(db.applicants).map(row => {
+        const source = db.applicants.find(item => item.registrationNumber === row.registrationNumber);
+        return {
+          ...row,
+          documents: source ? documentList(source.documents) : documentList()
+        };
+      })
     });
+  }
+
+  if (method === 'GET' && pathname.includes('/documents/')) {
+    const match = pathname.match(/^\/api\/admin\/applicants\/([^/]+)\/documents\/([^/]+)$/);
+    if (match) {
+      if (!requireAdmin(req, res)) return;
+
+      const registrationNumber = decodeURIComponent(match[1]);
+      const documentKey = decodeURIComponent(match[2]);
+      const definition = documentDefinitionMap[documentKey];
+      if (!definition) {
+        return sendJson(res, 404, {
+          success: false,
+          message: 'Dokumen tidak ditemukan.'
+        });
+      }
+
+      const db = await readDb();
+      const applicant = db.applicants.find(item => item.registrationNumber === registrationNumber);
+      const documentMeta = applicant && applicant.documents ? applicant.documents[documentKey] : null;
+      if (!applicant || !documentMeta) {
+        return sendJson(res, 404, {
+          success: false,
+          message: 'Dokumen belum tersedia.'
+        });
+      }
+
+      const uploadDirectory = path.resolve(applicantUploadDir(registrationNumber));
+      const filePath = path.resolve(uploadDirectory, documentMeta.fileName);
+      if (!filePath.startsWith(`${uploadDirectory}${path.sep}`)) {
+        return sendJson(res, 403, {
+          success: false,
+          message: 'Akses dokumen ditolak.'
+        });
+      }
+
+      try {
+        const body = await fsp.readFile(filePath);
+        res.writeHead(200, {
+          'Content-Type': documentMeta.mimeType || 'application/octet-stream',
+          'Content-Disposition': `attachment; filename="${sanitizeFileName(documentMeta.originalName)}${path.extname(documentMeta.originalName).toLowerCase()}"`,
+          'Cache-Control': 'no-store'
+        });
+        return res.end(body);
+      } catch {
+        return sendJson(res, 404, {
+          success: false,
+          message: 'File dokumen tidak ditemukan di server.'
+        });
+      }
+    }
   }
 
   if (method === 'PATCH' && pathname.startsWith('/api/admin/applicants/')) {
@@ -578,10 +858,11 @@ async function handleApi(req, res, url) {
   if (method === 'POST' && pathname === '/api/admin/reset') {
     if (!requireAdmin(req, res)) return;
     const freshDb = seedDatabase();
+    await clearUploadedDocuments();
     await writeDb(freshDb);
     return sendJson(res, 200, {
       success: true,
-      message: 'Data demo berhasil direset.',
+      message: 'Data berhasil direset.',
       data: getRanking(freshDb.applicants)
     });
   }
@@ -647,7 +928,7 @@ ensureDb()
   .then(() => {
     http.createServer(requestHandler).listen(PORT, () => {
       console.log(`PPDB ${SCHOOL_NAME} berjalan di http://localhost:${PORT}`);
-      console.log(`Password admin demo: ${ADMIN_PASSWORD}`);
+      console.log(`Password admin: ${ADMIN_PASSWORD}`);
     });
   })
   .catch(error => {

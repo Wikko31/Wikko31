@@ -8,6 +8,9 @@ const selectors = {
   navToggle: document.querySelector('#navToggle'),
   navLinks: document.querySelector('#navLinks'),
   registrationForm: document.querySelector('#registrationForm'),
+  pathwaySelect: document.querySelector('#pathwaySelect'),
+  achievementCertificate: document.querySelector('#achievementCertificate'),
+  achievementRequiredText: document.querySelector('#achievementRequiredText'),
   formMessage: document.querySelector('#formMessage'),
   rankingBody: document.querySelector('#rankingBody'),
   rankingSearch: document.querySelector('#rankingSearch'),
@@ -26,6 +29,7 @@ const selectors = {
   logoutAdminBtn: document.querySelector('#logoutAdminBtn'),
   statApplicants: document.querySelector('#statApplicants'),
   statVerified: document.querySelector('#statVerified'),
+  backToTop: document.querySelector('#backToTop'),
   toast: document.querySelector('#toast')
 };
 
@@ -34,14 +38,13 @@ function escapeHtml(value) {
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
-    .replaceAll(String.fromCharCode(34), '&quot;')
-    .replaceAll(String.fromCharCode(39), '&#039;');
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 }
 
 function formatScore(value) {
   if (value === null || value === undefined || value === '') return '-';
-  const text = Number(value).toFixed(2);
-  return text.endsWith('.00') ? text.slice(0, -3) : text;
+  return Number(value).toFixed(2).replace(/\.00$/, '');
 }
 
 function statusClass(status) {
@@ -49,36 +52,53 @@ function statusClass(status) {
 }
 
 function showToast(message) {
-  if (!selectors.toast) return;
   selectors.toast.textContent = message;
   selectors.toast.classList.add('show');
   setTimeout(() => selectors.toast.classList.remove('show'), 2600);
 }
 
 function setMessage(element, message, type = 'success') {
-  if (!element) return;
   element.textContent = message || '';
   element.classList.remove('success', 'error');
   if (message) element.classList.add(type);
 }
 
+function updateAchievementRequirement() {
+  const isPrestasi = selectors.pathwaySelect?.value === 'Prestasi';
+  if (selectors.achievementCertificate) {
+    selectors.achievementCertificate.required = isPrestasi;
+  }
+  if (selectors.achievementRequiredText) {
+    selectors.achievementRequiredText.textContent = isPrestasi
+      ? '(wajib untuk jalur Prestasi)'
+      : '(khusus jalur Prestasi)';
+  }
+}
+
 async function api(path, options = {}) {
-  const request = {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.admin ? { 'x-admin-password': state.adminPassword } : {}),
-      ...(options.headers || {})
-    }
+  const headers = {
+    ...(options.admin ? { 'x-admin-password': state.adminPassword } : {}),
+    ...(options.headers || {})
   };
+
+  if (options.body && !(options.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const request = { ...options, headers };
   delete request.admin;
   const response = await fetch(path, request);
+
   const contentType = response.headers.get('content-type') || '';
   const payload = contentType.includes('application/json') ? await response.json() : await response.text();
+
   if (!response.ok) {
-    const message = typeof payload === 'string' ? payload : payload.message || (payload.errors || []).join(' ') || 'Request gagal.';
+    const message = typeof payload === 'string'
+      ? payload
+      : payload.message || payload.errors?.join(' ') || 'Request gagal.';
     throw new Error(message);
   }
+
   return payload;
 }
 
@@ -87,34 +107,32 @@ async function loadRanking() {
   if (state.rankingSearch) params.set('search', state.rankingSearch);
   if (state.pathwayFilter) params.set('pathway', state.pathwayFilter);
   const result = await api(`/api/ranking?${params.toString()}`);
-  const rows = result.data || [];
-  renderRanking(rows);
-  updateStats(rows);
+  renderRanking(result.data || []);
+  updateStats(result.data || []);
 }
 
 function updateStats(rows) {
-  if (selectors.statApplicants) selectors.statApplicants.textContent = rows.length;
-  if (selectors.statVerified) {
-    selectors.statVerified.textContent = rows.filter((item) => ['Terverifikasi', 'Diterima', 'Cadangan'].includes(item.status)).length;
-  }
+  selectors.statApplicants.textContent = rows.length;
+  const verifiedCount = rows.filter(item => ['Terverifikasi', 'Diterima', 'Cadangan'].includes(item.status)).length;
+  selectors.statVerified.textContent = verifiedCount;
 }
 
 function renderRanking(rows) {
-  if (!selectors.rankingBody) return;
   if (!rows.length) {
-    selectors.rankingBody.innerHTML = `<tr><td colspan='8' class='muted-text'>Belum ada data ranking.</td></tr>`;
+    selectors.rankingBody.innerHTML = '<tr><td colspan="8" class="muted-text">Belum ada data ranking.</td></tr>';
     return;
   }
-  selectors.rankingBody.innerHTML = rows.map((item) => `
+
+  selectors.rankingBody.innerHTML = rows.map(item => `
     <tr>
-      <td>${item.rank ? `<span class='rank-pill'>${item.rank}</span>` : `<span class='muted-text'>-</span>`}</td>
+      <td>${item.rank ? `<span class="rank-pill">${item.rank}</span>` : '<span class="muted-text">-</span>'}</td>
       <td>${escapeHtml(item.registrationNumber)}</td>
-      <td>${escapeHtml(item.name)}<br><span class='muted-text'>${escapeHtml(item.nisn)}</span></td>
+      <td>${escapeHtml(item.name)}<br><span class="muted-text">${escapeHtml(item.nisn)}</span></td>
       <td>${escapeHtml(item.pathway)}</td>
       <td>${formatScore(item.reportScore)}</td>
       <td>${formatScore(item.testScore)}</td>
       <td><strong>${formatScore(item.finalScore)}</strong></td>
-      <td><span class='status-chip ${statusClass(item.status)}'>${escapeHtml(item.status)}</span></td>
+      <td><span class="status-chip ${statusClass(item.status)}">${escapeHtml(item.status)}</span></td>
     </tr>
   `).join('');
 }
@@ -122,13 +140,19 @@ function renderRanking(rows) {
 async function handleRegister(event) {
   event.preventDefault();
   setMessage(selectors.formMessage, 'Mengirim data pendaftaran...', 'success');
-  const payload = Object.fromEntries(new FormData(selectors.registrationForm).entries());
+
+  const formData = new FormData(selectors.registrationForm);
+
   try {
-    const result = await api('/api/register', { method: 'POST', body: JSON.stringify(payload) });
+    const result = await api('/api/register', {
+      method: 'POST',
+      body: formData
+    });
+
     const number = result.applicant.registrationNumber;
-    setMessage(selectors.formMessage, `Pendaftaran berhasil. Nomor pendaftaran Anda: ${number}`, 'success');
+    setMessage(selectors.formMessage, `Pendaftaran dan dokumen berhasil dikirim. Nomor pendaftaran Anda: ${number}`, 'success');
     selectors.registrationForm.reset();
-    if (selectors.statusKeyword) selectors.statusKeyword.value = number;
+    selectors.statusKeyword.value = number;
     await loadRanking();
     showToast('Pendaftaran berhasil disimpan');
   } catch (error) {
@@ -139,15 +163,19 @@ async function handleRegister(event) {
 async function checkStatus() {
   const keyword = selectors.statusKeyword.value.trim();
   if (!keyword) {
+    selectors.statusResult.className = 'status-result empty';
     selectors.statusResult.textContent = 'Masukkan nomor pendaftaran atau NISN terlebih dahulu.';
     return;
   }
+
+  selectors.statusResult.className = 'status-result';
   selectors.statusResult.textContent = 'Mencari data pendaftaran...';
+
   try {
     const result = await api(`/api/status/${encodeURIComponent(keyword)}`);
     const item = result.applicant;
     selectors.statusResult.innerHTML = `
-      <div class='status-grid'>
+      <div class="status-grid">
         <div><strong>Nama</strong>${escapeHtml(item.name)}</div>
         <div><strong>No. Pendaftaran</strong>${escapeHtml(item.registrationNumber)}</div>
         <div><strong>NISN</strong>${escapeHtml(item.nisn)}</div>
@@ -156,11 +184,12 @@ async function checkStatus() {
         <div><strong>Nilai Tes</strong>${formatScore(item.testScore)}</div>
         <div><strong>Nilai Akhir</strong>${formatScore(item.finalScore)}</div>
         <div><strong>Ranking</strong>${item.rank || '-'}</div>
-        <div><strong>Status</strong><span class='status-chip ${statusClass(item.status)}'>${escapeHtml(item.status)}</span></div>
+        <div><strong>Status</strong><span class="status-chip ${statusClass(item.status)}">${escapeHtml(item.status)}</span></div>
         <div><strong>Catatan</strong>${escapeHtml(item.notes || '-')}</div>
       </div>
     `;
   } catch (error) {
+    selectors.statusResult.className = 'status-result empty';
     selectors.statusResult.textContent = error.message;
   }
 }
@@ -171,6 +200,7 @@ async function loginAdmin() {
     setMessage(selectors.adminMessage, 'Masukkan password admin terlebih dahulu.', 'error');
     return;
   }
+
   state.adminPassword = password;
   try {
     await loadAdmin();
@@ -191,33 +221,60 @@ async function loadAdmin() {
 }
 
 function renderAdmin(rows) {
-  if (!selectors.adminBody) return;
   if (!rows.length) {
-    selectors.adminBody.innerHTML = `<tr><td colspan='6' class='muted-text'>Belum ada pendaftar.</td></tr>`;
+    selectors.adminBody.innerHTML = '<tr><td colspan="7" class="muted-text">Belum ada pendaftar.</td></tr>';
     return;
   }
-  selectors.adminBody.innerHTML = rows.map((item) => `
-    <tr data-id='${escapeHtml(item.registrationNumber)}'>
-      <td>${escapeHtml(item.registrationNumber)}<br><span class='muted-text'>${escapeHtml(item.nisn)}</span></td>
-      <td>${escapeHtml(item.name)}<br><span class='muted-text'>${escapeHtml(item.pathway)}</span></td>
-      <td><input type='number' min='0' max='100' step='0.01' data-field='testScore' value='${item.testScore ?? ''}'></td>
-      <td><select data-field='status'>${['Menunggu Verifikasi', 'Terverifikasi', 'Cadangan', 'Diterima', 'Ditolak'].map((status) => `<option value='${status}' ${status === item.status ? 'selected' : ''}>${status}</option>`).join('')}</select></td>
-      <td><textarea rows='2' data-field='notes'>${escapeHtml(item.notes || '')}</textarea></td>
-      <td><button class='btn btn-primary save-admin-btn'>Simpan</button></td>
+
+  selectors.adminBody.innerHTML = rows.map(item => `
+    <tr data-id="${escapeHtml(item.registrationNumber)}">
+      <td>${escapeHtml(item.registrationNumber)}<br><span class="muted-text">${escapeHtml(item.nisn)}</span></td>
+      <td>${escapeHtml(item.name)}<br><span class="muted-text">${escapeHtml(item.pathway)}</span></td>
+      <td><input type="number" min="0" max="100" step="0.01" data-field="testScore" value="${item.testScore ?? ''}" placeholder="0-100"></td>
+      <td>
+        <select data-field="status">
+          ${['Menunggu Verifikasi', 'Terverifikasi', 'Cadangan', 'Diterima', 'Ditolak'].map(status => `<option value="${status}" ${status === item.status ? 'selected' : ''}>${status}</option>`).join('')}
+        </select>
+      </td>
+      <td><textarea rows="2" data-field="notes" placeholder="Catatan admin">${escapeHtml(item.notes || '')}</textarea></td>
+      <td>${renderDocumentList(item)}</td>
+      <td><button class="btn btn-primary save-admin-btn">Simpan</button></td>
     </tr>
   `).join('');
+}
+
+function renderDocumentList(item) {
+  const documents = item.documents || [];
+  if (!documents.length) {
+    return '<span class="document-missing">Belum ada dokumen</span>';
+  }
+
+  return `
+    <div class="document-links">
+      ${documents.map(doc => doc.uploaded ? `
+        <button type="button" class="document-link download-document-btn" data-registration="${escapeHtml(item.registrationNumber)}" data-document="${escapeHtml(doc.key)}">${escapeHtml(doc.label)}</button>
+      ` : `
+        <span class="document-missing">${escapeHtml(doc.label)}: belum diunggah</span>
+      `).join('')}
+    </div>
+  `;
 }
 
 async function saveAdminRow(button) {
   const row = button.closest('tr');
   const registrationNumber = row.dataset.id;
   const payload = {
-    testScore: row.querySelector('[data-field=testScore]').value,
-    status: row.querySelector('[data-field=status]').value,
-    notes: row.querySelector('[data-field=notes]').value
+    testScore: row.querySelector('[data-field="testScore"]').value,
+    status: row.querySelector('[data-field="status"]').value,
+    notes: row.querySelector('[data-field="notes"]').value
   };
+
   try {
-    await api(`/api/admin/applicants/${encodeURIComponent(registrationNumber)}`, { method: 'PATCH', body: JSON.stringify(payload), admin: true });
+    await api(`/api/admin/applicants/${encodeURIComponent(registrationNumber)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+      admin: true
+    });
     setMessage(selectors.adminMessage, `Data ${registrationNumber} berhasil diperbarui.`, 'success');
     await Promise.all([loadRanking(), loadAdmin()]);
     showToast('Data berhasil disimpan');
@@ -228,19 +285,21 @@ async function saveAdminRow(button) {
 
 async function exportCsv() {
   try {
-    const response = await fetch('/api/admin/export', { headers: { 'x-admin-password': state.adminPassword } });
+    const response = await fetch('/api/admin/export', {
+      headers: { 'x-admin-password': state.adminPassword }
+    });
     if (!response.ok) {
       const payload = await response.json();
       throw new Error(payload.message || 'Gagal ekspor CSV.');
     }
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'data-ppdb-sman2-ngawi.csv';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'data-ppdb-sman2-ngawi.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
     URL.revokeObjectURL(url);
     showToast('CSV berhasil dibuat');
   } catch (error) {
@@ -248,8 +307,42 @@ async function exportCsv() {
   }
 }
 
+async function downloadDocument(button) {
+  const registrationNumber = button.dataset.registration;
+  const documentKey = button.dataset.document;
+
+  try {
+    const response = await fetch(`/api/admin/applicants/${encodeURIComponent(registrationNumber)}/documents/${encodeURIComponent(documentKey)}`, {
+      headers: { 'x-admin-password': state.adminPassword }
+    });
+
+    if (!response.ok) {
+      const payload = await response.json();
+      throw new Error(payload.message || 'Dokumen gagal diunduh.');
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get('content-disposition') || '';
+    const filenameMatch = disposition.match(/filename="([^"]+)"/);
+    const filename = filenameMatch ? filenameMatch[1] : `${registrationNumber}-${documentKey}`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast('Dokumen berhasil diunduh');
+  } catch (error) {
+    setMessage(selectors.adminMessage, error.message, 'error');
+  }
+}
+
 async function resetData() {
-  if (!confirm('Reset data pendaftaran? Data tambahan akan hilang.')) return;
+  const confirmed = confirm('Reset data pendaftaran? Data tambahan akan hilang.');
+  if (!confirmed) return;
+
   try {
     await api('/api/admin/reset', { method: 'POST', admin: true });
     await Promise.all([loadRanking(), loadAdmin()]);
@@ -269,6 +362,31 @@ function logoutAdmin() {
   setMessage(selectors.adminMessage, 'Anda keluar dari panel admin.', 'success');
 }
 
+function setupNavigation() {
+  selectors.navToggle.addEventListener('click', () => selectors.navLinks.classList.toggle('show'));
+  selectors.navLinks.querySelectorAll('a').forEach(link => {
+    link.addEventListener('click', () => selectors.navLinks.classList.remove('show'));
+  });
+
+  window.addEventListener('scroll', () => {
+    selectors.backToTop.classList.toggle('show', window.scrollY > 600);
+  });
+  selectors.backToTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+}
+
+function setupRevealAnimation() {
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.12 });
+
+  document.querySelectorAll('.reveal').forEach(element => observer.observe(element));
+}
+
 function debounce(callback, delay = 350) {
   let timer;
   return (...args) => {
@@ -278,32 +396,57 @@ function debounce(callback, delay = 350) {
 }
 
 function setupEvents() {
-  selectors.navToggle?.addEventListener('click', () => selectors.navLinks.classList.toggle('show'));
-  selectors.navLinks?.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => selectors.navLinks.classList.remove('show')));
-  selectors.registrationForm?.addEventListener('submit', handleRegister);
-  selectors.checkStatusBtn?.addEventListener('click', checkStatus);
-  selectors.statusKeyword?.addEventListener('keydown', (event) => { if (event.key === 'Enter') checkStatus(); });
-  selectors.rankingSearch?.addEventListener('input', debounce((event) => { state.rankingSearch = event.target.value.trim(); loadRanking().catch((error) => showToast(error.message)); }));
-  selectors.pathwayFilter?.addEventListener('change', (event) => { state.pathwayFilter = event.target.value; loadRanking().catch((error) => showToast(error.message)); });
-  selectors.adminLoginBtn?.addEventListener('click', loginAdmin);
-  selectors.adminPassword?.addEventListener('keydown', (event) => { if (event.key === 'Enter') loginAdmin(); });
-  selectors.adminBody?.addEventListener('click', (event) => { if (event.target.classList.contains('save-admin-btn')) saveAdminRow(event.target); });
-  selectors.exportCsvBtn?.addEventListener('click', exportCsv);
-  selectors.resetDataBtn?.addEventListener('click', resetData);
-  selectors.logoutAdminBtn?.addEventListener('click', logoutAdmin);
+  updateAchievementRequirement();
+  selectors.registrationForm.addEventListener('submit', handleRegister);
+  selectors.pathwaySelect.addEventListener('change', updateAchievementRequirement);
+  selectors.checkStatusBtn.addEventListener('click', checkStatus);
+  selectors.statusKeyword.addEventListener('keydown', event => {
+    if (event.key === 'Enter') checkStatus();
+  });
+
+  selectors.rankingSearch.addEventListener('input', debounce(event => {
+    state.rankingSearch = event.target.value.trim();
+    loadRanking().catch(error => showToast(error.message));
+  }));
+
+  selectors.pathwayFilter.addEventListener('change', event => {
+    state.pathwayFilter = event.target.value;
+    loadRanking().catch(error => showToast(error.message));
+  });
+
+  selectors.adminLoginBtn.addEventListener('click', loginAdmin);
+  selectors.adminPassword.addEventListener('keydown', event => {
+    if (event.key === 'Enter') loginAdmin();
+  });
+
+  selectors.adminBody.addEventListener('click', event => {
+    if (event.target.classList.contains('save-admin-btn')) {
+      saveAdminRow(event.target);
+    }
+    if (event.target.classList.contains('download-document-btn')) {
+      downloadDocument(event.target);
+    }
+  });
+
+  selectors.exportCsvBtn.addEventListener('click', exportCsv);
+  selectors.resetDataBtn.addEventListener('click', resetData);
+  selectors.logoutAdminBtn.addEventListener('click', logoutAdmin);
 }
 
 async function init() {
+  setupNavigation();
+  setupRevealAnimation();
   setupEvents();
   await loadRanking();
-  if (state.adminPassword && selectors.adminLogin && selectors.adminArea) {
+
+  if (state.adminPassword) {
     selectors.adminLogin.classList.add('hidden');
     selectors.adminArea.classList.remove('hidden');
     loadAdmin().catch(() => logoutAdmin());
   }
 }
 
-init().catch((error) => {
+init().catch(error => {
   console.error(error);
   showToast('Gagal memuat aplikasi');
 });
